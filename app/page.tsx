@@ -11,6 +11,7 @@ import {
   Shield,
   Activity,
 } from "lucide-react";
+import Link from "next/link";
 
 export default function Home() {
   const features = [
@@ -80,12 +81,18 @@ export default function Home() {
               </p>
 
               <div className="flex flex-col sm:flex-row gap-4 mb-8">
+                <Link href='/patient/appointments'>
                 <button className="px-8 py-3.5 bg-gradient-to-r from-blue-600 to-emerald-500 text-white font-semibold rounded-xl hover:from-blue-700 hover:to-emerald-600 transition-all duration-200 shadow-lg hover:shadow-xl">
                   Book Appointment
                 </button>
-                <button className="px-8 py-3.5 bg-white text-blue-600 font-semibold border-2 border-blue-200 rounded-xl hover:bg-blue-50 transition-all duration-200 shadow-sm hover:shadow-md">
+                </Link>
+                
+                <Link href="/login" className="">
+                <button className="cursor-pointer px-8 py-3.5 bg-white text-blue-600 font-semibold border-2 border-blue-200 rounded-xl hover:bg-blue-50 transition-all duration-200 shadow-sm hover:shadow-md">
                   Login to Portal
                 </button>
+                </Link>
+                
               </div>
 
               <div className="flex flex-wrap gap-6 text-sm text-gray-600">
