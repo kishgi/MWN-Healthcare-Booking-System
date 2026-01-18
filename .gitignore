@@ -39,4 +39,4 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
-mwn-healthcare-firebase-adminsdk-*.json
+mwn-healthcare-firebase-adminsdk-fbsvc-d3bfff1fe4.json
