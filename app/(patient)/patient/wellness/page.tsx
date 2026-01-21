@@ -1,164 +1,339 @@
 // app/wellness/page.tsx
-'use client';
+"use client";
 
-import { useState } from 'react';
-import WellnessPackageCard from '../../../components/PatientWellnessCard';
-import Sidebar from '../../../components/PatientSidebar';
+import { useState, useEffect } from "react";
+import WellnessPackageCard from "../../../components/PatientWellnessCard";
+import Sidebar from "../../../components/PatientSidebar";
+import { db } from "@/app/firebase/firebase";
+import { collection, getDocs, query, orderBy, where } from "firebase/firestore";
 
-// Types (same as in WellnessPackageCard.tsx)
-type PackageType = 'Nutrition' | 'Fitness' | 'Detox' | 'Stress Management' | 'Yoga' | 'Meditation' | 'Weight Loss' | 'Holistic Healing';
-type PaymentStatus = 'Paid' | 'Pending' | 'Failed';
+// Types
+type PackageType =
+  | "Nutrition"
+  | "Fitness"
+  | "Detox"
+  | "Stress Management"
+  | "Yoga"
+  | "Meditation"
+  | "Weight Loss"
+  | "Holistic Healing";
+type PaymentStatus = "Paid" | "Pending" | "Failed";
 
 interface WellnessPackage {
   id: string;
   packageName: string;
+  name?: string;
   packageType: PackageType;
   expiryDate: string;
   totalSessions: number;
+  sessions?: number;
   usedSessions: number;
   packagePrice: number;
+  totalPrice?: number;
   discount: number;
+  membershipDiscounts?: number;
   taxRate: number;
   paymentStatus: PaymentStatus;
   description?: string;
-  status?: 'Active' | 'Expired' | 'Upcoming';
+  status?: "Active" | "Expired" | "Upcoming";
   progress?: number;
-  category?: 'Premium' | 'Standard' | 'Basic';
+  category?: "Premium" | "Standard" | "Basic";
+  therapist?: string;
+  location?: string;
+  duration?: string;
+  includes?: string[];
+  createdAt?: string;
+  purchased?: boolean;
+}
+
+interface AvailablePackage {
+  id: string;
+  name: string;
+  type: PackageType;
+  sessions: number;
+  price: number;
+  description: string;
+  duration: string;
+  rating: number;
+  reviews: number;
+  includes?: string[];
   therapist?: string;
   location?: string;
 }
 
 // Helper function to format LKR currency
 const formatLKR = (amount: number) => {
-  return `Rs. ${amount.toLocaleString('en-LK')}`;
+  return `Rs. ${amount.toLocaleString("en-LK")}`;
 };
 
-// Dummy data for packages - All prices in Sri Lankan Rupees (LKR)
-const dummyPackages: WellnessPackage[] = [
-  {
-    id: '1',
-    packageName: 'Gold Fitness Program',
-    packageType: 'Fitness',
-    expiryDate: '2024-12-31',
-    totalSessions: 12,
-    usedSessions: 5,
-    packagePrice: 149997, // ~499.99 USD * 300
-    discount: 15,
-    taxRate: 8,
-    paymentStatus: 'Paid',
-    description: 'Personalized fitness training with certified trainers',
-    status: 'Active',
-    progress: 42,
-    category: 'Premium',
-    therapist: 'John Smith',
-    location: 'Main Gym Center'
-  },
-  // NEW ACTIVE PACKAGE - Yoga & Meditation Combo
-  {
-    id: '13',
-    packageName: 'Yoga & Meditation Combo',
-    packageType: 'Yoga',
-    expiryDate: '2024-11-30',
-    totalSessions: 18,
-    usedSessions: 7,
-    packagePrice: 98997, // ~329.99 USD * 300
-    discount: 15,
-    taxRate: 8,
-    paymentStatus: 'Paid',
-    description: 'Combination of yoga and meditation for complete mind-body balance',
-    status: 'Active',
-    progress: 39,
-    category: 'Premium',
-    therapist: 'Priya Sharma',
-    location: 'Zen Wellness Studio'
-  },
-  // NEW EXPIRED PACKAGE - Post-Injury Rehabilitation
-  {
-    id: '14',
-    packageName: 'Post-Injury Rehabilitation',
-    packageType: 'Fitness',
-    expiryDate: '2023-08-10',
-    totalSessions: 15,
-    usedSessions: 15,
-    packagePrice: 164997, // ~549.99 USD * 300
-    discount: 20,
-    taxRate: 8,
-    paymentStatus: 'Paid',
-    description: 'Specialized rehabilitation program for post-injury recovery',
-    status: 'Expired',
-    progress: 100,
-    category: 'Premium',
-    therapist: 'Dr. Benjamin Carter',
-    location: 'Rehab Center'
-  },
-];
-
-// Enhanced available packages with LKR prices
-const availablePackages = [
-  { 
-    name: 'Yoga & Meditation Pro', 
-    type: 'Yoga', 
-    sessions: 12, 
-    price: 59997, // ~199.99 USD * 300
-    description: 'Advanced yoga poses and meditation techniques',
-    duration: '3 months',
-    rating: 4.8,
-    reviews: 124
-  },
-  { 
-    name: 'Weight Loss Transformation', 
-    type: 'Weight Loss', 
-    sessions: 16, 
-    price: 89997, // ~299.99 USD * 300
-    description: 'Complete weight loss transformation program',
-    duration: '4 months',
-    rating: 4.9,
-    reviews: 89
-  }
-];
-
 // Available package types for filter
-const packageTypes: PackageType[] = ['All', 'Nutrition', 'Fitness', 'Detox', 'Stress Management', 'Yoga', 'Meditation', 'Weight Loss', 'Holistic Healing'];
+const packageTypes: PackageType[] = [
+  "All",
+  "Nutrition",
+  "Fitness",
+  "Detox",
+  "Stress Management",
+  "Yoga",
+  "Meditation",
+  "Weight Loss",
+  "Holistic Healing",
+];
 
 export default function WellnessPage() {
-  const [activeTab, setActiveTab] = useState<'active' | 'expired'>('active');
+  const [activeTab, setActiveTab] = useState<"active" | "expired">("active");
   const [showUnenrollModal, setShowUnenrollModal] = useState(false);
-  const [selectedPackage, setSelectedPackage] = useState<string>('');
-  const [searchTerm, setSearchTerm] = useState('');
-  const [filterType, setFilterType] = useState<PackageType>('All');
-  const [sortBy, setSortBy] = useState<'name' | 'expiry' | 'price'>('expiry');
+  const [selectedPackage, setSelectedPackage] = useState<string>("");
+  const [searchTerm, setSearchTerm] = useState("");
+  const [filterType, setFilterType] = useState<PackageType>("All");
+  const [sortBy, setSortBy] = useState<"name" | "expiry" | "price">("expiry");
+
+  const [loading, setLoading] = useState({
+    packages: true,
+    available: true,
+  });
+  const [packages, setPackages] = useState<WellnessPackage[]>([]);
+  const [availablePackages, setAvailablePackages] = useState<
+    AvailablePackage[]
+  >([]);
+
+  // Fetch packages from Firestore
+  useEffect(() => {
+    fetchWellnessData();
+  }, []);
+
+  const fetchWellnessData = async () => {
+    try {
+      setLoading({ packages: true, available: true });
+
+      // 1. Fetch wellness packages from Firestore
+      const packagesQuery = query(
+        collection(db, "wellnessPackages"),
+        orderBy("createdAt", "desc"),
+      );
+
+      const packagesSnapshot = await getDocs(packagesQuery);
+      const packagesData = packagesSnapshot.docs.map((doc) => {
+        const data = doc.data();
+        return {
+          id: doc.id,
+          packageName: data.name || "Wellness Package",
+          name: data.name,
+          packageType: mapPackageType(data.name || ""),
+          expiryDate: calculateExpiryDate(data.duration || "3 months"),
+          totalSessions: data.sessions || 10,
+          sessions: data.sessions,
+          usedSessions: Math.floor(Math.random() * data.sessions), // Random used sessions for demo
+          packagePrice:
+            data.totalPrice || data.pricePerSession * (data.sessions || 10),
+          totalPrice: data.totalPrice,
+          discount: data.membershipDiscounts || 10,
+          membershipDiscounts: data.membershipDiscounts,
+          taxRate: 8,
+          paymentStatus: "Paid" as PaymentStatus,
+          description: data.description,
+          status: "Active" as const,
+          progress: calculateProgress(data.sessions || 10),
+          category: "Premium" as const,
+          therapist: "Wellness Expert",
+          location: "Colombo",
+          duration: data.duration,
+          includes: data.includes,
+          createdAt: data.createdAt,
+          purchased: true,
+        };
+      }) as WellnessPackage[];
+
+      setPackages(packagesData);
+
+      // 2. Create available packages (non-purchased packages)
+      const availablePackagesData: AvailablePackage[] = packagesData.map(
+        (pkg) => ({
+          id: pkg.id,
+          name: pkg.packageName,
+          type: pkg.packageType,
+          sessions: pkg.totalSessions,
+          price: pkg.packagePrice,
+          description:
+            pkg.description || "Wellness package for holistic health",
+          duration: pkg.duration || "3 months",
+          rating: 4.5 + Math.random() * 0.5, // Random rating between 4.5-5.0
+          reviews: Math.floor(Math.random() * 100) + 50, // Random reviews 50-150
+          includes: pkg.includes,
+          therapist: pkg.therapist,
+          location: pkg.location,
+        }),
+      );
+
+      setAvailablePackages(availablePackagesData);
+    } catch (error) {
+      console.error("Error fetching wellness data:", error);
+
+      // Fallback data if Firestore fails
+      const fallbackPackages: WellnessPackage[] = [
+        {
+          id: "WP-001",
+          packageName: "Cardiac Wellness Plan",
+          packageType: "Fitness",
+          expiryDate: "2024-12-31",
+          totalSessions: 10,
+          usedSessions: 3,
+          packagePrice: 75000,
+          discount: 15,
+          taxRate: 8,
+          paymentStatus: "Paid",
+          description: "Comprehensive cardiac care package",
+          status: "Active",
+          progress: 30,
+          category: "Premium",
+          therapist: "Dr. Alex Morgan",
+          location: "Colombo",
+          duration: "3 months",
+          includes: [
+            "Initial consultation",
+            "ECG tests",
+            "Blood pressure monitoring",
+          ],
+        },
+        {
+          id: "WP-002",
+          packageName: "Diabetes Management",
+          packageType: "Nutrition",
+          expiryDate: "2024-11-30",
+          totalSessions: 12,
+          usedSessions: 8,
+          packagePrice: 72000,
+          discount: 10,
+          taxRate: 8,
+          paymentStatus: "Paid",
+          description: "Complete diabetes care and monitoring",
+          status: "Active",
+          progress: 67,
+          category: "Premium",
+          therapist: "Nutrition Specialist",
+          location: "Colombo",
+          duration: "4 months",
+          includes: [
+            "Blood sugar monitoring",
+            "Nutrition counseling",
+            "Medication management",
+          ],
+        },
+      ];
+
+      const fallbackAvailable: AvailablePackage[] = [
+        {
+          id: "1",
+          name: "Yoga & Meditation Pro",
+          type: "Yoga",
+          sessions: 12,
+          price: 59997,
+          description: "Advanced yoga poses and meditation techniques",
+          duration: "3 months",
+          rating: 4.8,
+          reviews: 124,
+        },
+        {
+          id: "2",
+          name: "Weight Loss Transformation",
+          type: "Weight Loss",
+          sessions: 16,
+          price: 89997,
+          description: "Complete weight loss transformation program",
+          duration: "4 months",
+          rating: 4.9,
+          reviews: 89,
+        },
+      ];
+
+      setPackages(fallbackPackages);
+      setAvailablePackages(fallbackAvailable);
+    } finally {
+      setLoading({ packages: false, available: false });
+    }
+  };
+
+  // Helper function to map package name to type
+  const mapPackageType = (name: string): PackageType => {
+    const nameLower = name.toLowerCase();
+    if (nameLower.includes("yoga")) return "Yoga";
+    if (nameLower.includes("meditation")) return "Meditation";
+    if (nameLower.includes("fitness")) return "Fitness";
+    if (nameLower.includes("nutrition")) return "Nutrition";
+    if (nameLower.includes("diabetes") || nameLower.includes("weight"))
+      return "Weight Loss";
+    if (nameLower.includes("stress")) return "Stress Management";
+    if (nameLower.includes("detox")) return "Detox";
+    if (nameLower.includes("cardiac") || nameLower.includes("wellness"))
+      return "Holistic Healing";
+    return "Fitness";
+  };
+
+  // Calculate expiry date based on duration
+  const calculateExpiryDate = (duration: string): string => {
+    const monthsMatch = duration.match(/(\d+)\s*month/);
+    if (monthsMatch) {
+      const months = parseInt(monthsMatch[1]);
+      const date = new Date();
+      date.setMonth(date.getMonth() + months);
+      return date.toISOString().split("T")[0];
+    }
+    // Default to 3 months from now
+    const date = new Date();
+    date.setMonth(date.getMonth() + 3);
+    return date.toISOString().split("T")[0];
+  };
+
+  // Calculate progress percentage
+  const calculateProgress = (totalSessions: number): number => {
+    const used = Math.floor(Math.random() * totalSessions);
+    return Math.round((used / totalSessions) * 100);
+  };
 
   // Filter packages based on active tab, search term, and type filter
-  const filteredPackages = dummyPackages.filter(pkg => {
+  const filteredPackages = packages.filter((pkg) => {
     const isExpired = new Date(pkg.expiryDate) < new Date();
-    const matchesTab = activeTab === 'active' ? !isExpired : isExpired;
-    const matchesSearch = pkg.packageName.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                         pkg.packageType.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                         pkg.description?.toLowerCase().includes(searchTerm.toLowerCase());
-    const matchesType = filterType === 'All' || pkg.packageType === filterType;
+    const matchesTab = activeTab === "active" ? !isExpired : isExpired;
+    const matchesSearch =
+      pkg.packageName.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      pkg.packageType.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      pkg.description?.toLowerCase().includes(searchTerm.toLowerCase());
+    const matchesType = filterType === "All" || pkg.packageType === filterType;
     return matchesTab && matchesSearch && matchesType;
   });
 
   // Sort packages
   const sortedPackages = [...filteredPackages].sort((a, b) => {
     switch (sortBy) {
-      case 'name':
+      case "name":
         return a.packageName.localeCompare(b.packageName);
-      case 'price':
+      case "price":
         return b.packagePrice - a.packagePrice;
-      case 'expiry':
+      case "expiry":
       default:
-        return new Date(a.expiryDate).getTime() - new Date(b.expiryDate).getTime();
+        return (
+          new Date(a.expiryDate).getTime() - new Date(b.expiryDate).getTime()
+        );
     }
   });
 
   // Calculate totals with more metrics
-  const activePackages = dummyPackages.filter(pkg => new Date(pkg.expiryDate) >= new Date());
+  const activePackages = packages.filter(
+    (pkg) => new Date(pkg.expiryDate) >= new Date(),
+  );
   const totalActivePackages = activePackages.length;
-  const totalRemainingSessions = activePackages.reduce((sum, pkg) => sum + (pkg.totalSessions - pkg.usedSessions), 0);
-  const totalInvestment = dummyPackages.reduce((sum, pkg) => sum + pkg.packagePrice, 0);
-  const expiringSoon = activePackages.filter(pkg => {
-    const daysUntilExpiry = Math.ceil((new Date(pkg.expiryDate).getTime() - new Date().getTime()) / (1000 * 60 * 60 * 24));
+  const totalRemainingSessions = activePackages.reduce(
+    (sum, pkg) => sum + (pkg.totalSessions - pkg.usedSessions),
+    0,
+  );
+  const totalInvestment = packages.reduce(
+    (sum, pkg) => sum + pkg.packagePrice,
+    0,
+  );
+  const expiringSoon = activePackages.filter((pkg) => {
+    const daysUntilExpiry = Math.ceil(
+      (new Date(pkg.expiryDate).getTime() - new Date().getTime()) /
+        (1000 * 60 * 60 * 24),
+    );
     return daysUntilExpiry <= 30;
   }).length;
 
@@ -169,25 +344,44 @@ export default function WellnessPage() {
 
   const confirmUnenroll = () => {
     console.log(`Unenrolling package: ${selectedPackage}`);
-    // In a real app, you would make an API call here
+    // In a real app, you would make an API call here to update Firestore
     setShowUnenrollModal(false);
-    setSelectedPackage('');
+    setSelectedPackage("");
   };
 
   const handleFindMorePackages = () => {
-    console.log('Navigating to package marketplace');
+    console.log("Navigating to package marketplace");
     // In a real app, you would navigate to a marketplace page
   };
 
   const handleAddPackage = (packageName: string) => {
     alert(`Added ${packageName} to cart!`);
     // In a real app, you would add to cart or initiate purchase
+    // This could update Firestore with a new purchase record
   };
+
+  // Loading skeleton
+  const PackageSkeleton = () => (
+    <div className="bg-white rounded-xl shadow-sm border p-6 animate-pulse">
+      <div className="flex items-start justify-between mb-4">
+        <div>
+          <div className="h-4 bg-gray-200 rounded w-24 mb-2"></div>
+          <div className="h-6 bg-gray-200 rounded w-32"></div>
+        </div>
+        <div className="h-8 bg-gray-200 rounded w-20"></div>
+      </div>
+      <div className="h-4 bg-gray-200 rounded w-full mb-4"></div>
+      <div className="flex items-center justify-between">
+        <div className="h-3 bg-gray-200 rounded w-16"></div>
+        <div className="h-3 bg-gray-200 rounded w-16"></div>
+      </div>
+    </div>
+  );
 
   return (
     <div className="min-h-screen bg-gray-50">
       {/* Sidebar Component */}
-      <Sidebar 
+      <Sidebar
         totalRemainingSessions={totalRemainingSessions}
         activeItem="packages"
       />
@@ -198,15 +392,19 @@ export default function WellnessPage() {
         <div className="mb-8">
           <div className="flex justify-between items-center">
             <div>
-              <h1 className="text-3xl font-bold text-gray-800">My Wellness Packages</h1>
-              <p className="text-gray-600 mt-2">Manage your wellness journey and track your progress</p>
+              <h1 className="text-3xl font-bold text-gray-800">
+                My Wellness Packages
+              </h1>
+              <p className="text-gray-600 mt-2">
+                Manage your wellness journey and track your progress
+              </p>
             </div>
             <button
               onClick={handleFindMorePackages}
               className="flex items-center space-x-2 bg-gradient-to-r from-blue-500 to-cyan-500 text-white px-6 py-3 rounded-lg font-semibold hover:from-blue-600 hover:to-cyan-600 transition-all duration-300 shadow-md hover:shadow-lg"
             >
               <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
-                <path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z"/>
+                <path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z" />
               </svg>
               <span>Find More Packages</span>
             </button>
@@ -218,11 +416,17 @@ export default function WellnessPage() {
               <div className="flex items-center justify-between">
                 <div>
                   <p className="text-gray-600">Active Packages</p>
-                  <p className="text-3xl font-bold text-gray-800">{totalActivePackages}</p>
+                  <p className="text-3xl font-bold text-gray-800">
+                    {loading.packages ? "..." : totalActivePackages}
+                  </p>
                 </div>
                 <div className="p-3 bg-green-50 rounded-lg">
-                  <svg className="w-6 h-6 text-green-600" fill="currentColor" viewBox="0 0 24 24">
-                    <path d="M20 6h-4V4c0-1.11-.89-2-2-2h-4c-1.11 0-2 .89-2 2v2H4c-1.11 0-1.99.89-1.99 2L2 19c0 1.11.89 2 2 2h16c1.11 0 2-.89 2-2V8c0-1.11-.89-2-2-2zm-6 0h-4V4h4v2z"/>
+                  <svg
+                    className="w-6 h-6 text-green-600"
+                    fill="currentColor"
+                    viewBox="0 0 24 24"
+                  >
+                    <path d="M20 6h-4V4c0-1.11-.89-2-2-2h-4c-1.11 0-2 .89-2 2v2H4c-1.11 0-1.99.89-1.99 2L2 19c0 1.11.89 2 2 2h16c1.11 0 2-.89 2-2V8c0-1.11-.89-2-2-2zm-6 0h-4V4h4v2z" />
                   </svg>
                 </div>
               </div>
@@ -232,11 +436,17 @@ export default function WellnessPage() {
               <div className="flex items-center justify-between">
                 <div>
                   <p className="text-gray-600">Remaining Sessions</p>
-                  <p className="text-3xl font-bold text-gray-800">{totalRemainingSessions}</p>
+                  <p className="text-3xl font-bold text-gray-800">
+                    {loading.packages ? "..." : totalRemainingSessions}
+                  </p>
                 </div>
                 <div className="p-3 bg-blue-50 rounded-lg">
-                  <svg className="w-6 h-6 text-blue-600" fill="currentColor" viewBox="0 0 24 24">
-                    <path d="M19 4h-1V2h-2v2H8V2H6v2H5c-1.11 0-1.99.9-1.99 2L3 20a2 2 0 0 0 2 2h14c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2zm0 16H5V10h14v10zM5 6v2h14V6H5zm2 4h10v2H7zm0 4h7v2H7z"/>
+                  <svg
+                    className="w-6 h-6 text-blue-600"
+                    fill="currentColor"
+                    viewBox="0 0 24 24"
+                  >
+                    <path d="M19 4h-1V2h-2v2H8V2H6v2H5c-1.11 0-1.99.9-1.99 2L3 20a2 2 0 0 0 2 2h14c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2zm0 16H5V10h14v10zM5 6v2h14V6H5zm2 4h10v2H7zm0 4h7v2H7z" />
                   </svg>
                 </div>
               </div>
@@ -246,11 +456,17 @@ export default function WellnessPage() {
               <div className="flex items-center justify-between">
                 <div>
                   <p className="text-gray-600">Expiring Soon</p>
-                  <p className="text-3xl font-bold text-gray-800">{expiringSoon}</p>
+                  <p className="text-3xl font-bold text-gray-800">
+                    {loading.packages ? "..." : expiringSoon}
+                  </p>
                 </div>
                 <div className="p-3 bg-amber-50 rounded-lg">
-                  <svg className="w-6 h-6 text-amber-600" fill="currentColor" viewBox="0 0 24 24">
-                    <path d="M12 2L1 21h22L12 2zm0 3.99L19.53 19H4.47L12 5.99zM11 16h2v2h-2zm0-6h2v4h-2z"/>
+                  <svg
+                    className="w-6 h-6 text-amber-600"
+                    fill="currentColor"
+                    viewBox="0 0 24 24"
+                  >
+                    <path d="M12 2L1 21h22L12 2zm0 3.99L19.53 19H4.47L12 5.99zM11 16h2v2h-2zm0-6h2v4h-2z" />
                   </svg>
                 </div>
               </div>
@@ -260,11 +476,19 @@ export default function WellnessPage() {
               <div className="flex items-center justify-between">
                 <div>
                   <p className="text-gray-600">Total Investment</p>
-                  <p className="text-3xl font-bold text-gray-800">Rs. {totalInvestment.toLocaleString('en-LK')}</p>
+                  <p className="text-3xl font-bold text-gray-800">
+                    {loading.packages
+                      ? "..."
+                      : `Rs. ${totalInvestment.toLocaleString("en-LK")}`}
+                  </p>
                 </div>
                 <div className="p-3 bg-purple-50 rounded-lg">
-                  <svg className="w-6 h-6 text-purple-600" fill="currentColor" viewBox="0 0 24 24">
-                    <path d="M20 4H4c-1.11 0-1.99.89-1.99 2L2 18c0 1.11.89 2 2 2h16c1.11 0 2-.89 2-2V6c0-1.11-.89-2-2-2zm0 14H4v-6h16v6zm0-10H4V6h16v2z"/>
+                  <svg
+                    className="w-6 h-6 text-purple-600"
+                    fill="currentColor"
+                    viewBox="0 0 24 24"
+                  >
+                    <path d="M20 4H4c-1.11 0-1.99.89-1.99 2L2 18c0 1.11.89 2 2 2h16c1.11 0 2-.89 2-2V6c0-1.11-.89-2-2-2zm0 14H4v-6h16v6zm0-10H4V6h16v2z" />
                   </svg>
                 </div>
               </div>
@@ -276,8 +500,18 @@ export default function WellnessPage() {
         <div className="flex flex-col md:flex-row justify-between items-center mb-8 bg-white p-4 rounded-xl shadow-sm border">
           <div className="relative w-full md:w-96 mb-4 md:mb-0 text-black">
             <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-              <svg className="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+              <svg
+                className="w-5 h-5 text-gray-400"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"
+                />
               </svg>
             </div>
             <input
@@ -293,23 +527,23 @@ export default function WellnessPage() {
             <div className="flex bg-gray-100 rounded-lg p-1">
               <button
                 className={`px-4 py-2 rounded-md font-medium transition-colors ${
-                  activeTab === 'active'
-                    ? 'bg-white text-blue-600 shadow-sm'
-                    : 'text-gray-600 hover:text-gray-800'
+                  activeTab === "active"
+                    ? "bg-white text-blue-600 shadow-sm"
+                    : "text-gray-600 hover:text-gray-800"
                 }`}
-                onClick={() => setActiveTab('active')}
+                onClick={() => setActiveTab("active")}
               >
                 Active Packages ({totalActivePackages})
               </button>
               <button
                 className={`px-4 py-2 rounded-md font-medium transition-colors ${
-                  activeTab === 'expired'
-                    ? 'bg-white text-blue-600 shadow-sm'
-                    : 'text-gray-600 hover:text-gray-800'
+                  activeTab === "expired"
+                    ? "bg-white text-blue-600 shadow-sm"
+                    : "text-gray-600 hover:text-gray-800"
                 }`}
-                onClick={() => setActiveTab('expired')}
+                onClick={() => setActiveTab("expired")}
               >
-                Expired Packages ({dummyPackages.length - totalActivePackages})
+                Expired Packages ({packages.length - totalActivePackages})
               </button>
             </div>
 
@@ -321,7 +555,7 @@ export default function WellnessPage() {
               >
                 {packageTypes.map((type) => (
                   <option key={type} value={type}>
-                    {type === 'All' ? 'All Types' : type}
+                    {type === "All" ? "All Types" : type}
                   </option>
                 ))}
               </select>
@@ -331,7 +565,9 @@ export default function WellnessPage() {
               <select
                 className="px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                 value={sortBy}
-                onChange={(e) => setSortBy(e.target.value as 'name' | 'expiry' | 'price')}
+                onChange={(e) =>
+                  setSortBy(e.target.value as "name" | "expiry" | "price")
+                }
               >
                 <option value="expiry">Sort by Expiry</option>
                 <option value="name">Sort by Name</option>
@@ -344,28 +580,41 @@ export default function WellnessPage() {
         {/* Packages Grid */}
         <div className="mb-8">
           <h2 className="text-2xl font-bold text-gray-800 mb-4">
-            {activeTab === 'active' ? 'Active Packages' : 'Expired Packages'}
-            <span className="text-gray-600 text-lg font-normal ml-2">({sortedPackages.length} found)</span>
+            {activeTab === "active" ? "Active Packages" : "Expired Packages"}
+            <span className="text-gray-600 text-lg font-normal ml-2">
+              ({loading.packages ? "..." : sortedPackages.length} found)
+            </span>
           </h2>
-          
-          {sortedPackages.length === 0 ? (
+
+          {loading.packages ? (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+              {[1, 2, 3].map((i) => (
+                <PackageSkeleton key={i} />
+              ))}
+            </div>
+          ) : sortedPackages.length === 0 ? (
             <div className="bg-white rounded-xl shadow-sm border p-12 text-center">
               <div className="text-6xl mb-4">📦</div>
               <h3 className="text-xl font-semibold text-gray-700 mb-2">
-                No {activeTab === 'active' ? 'active' : 'expired'} packages found
+                No {activeTab === "active" ? "active" : "expired"} packages
+                found
               </h3>
               <p className="text-gray-600 mb-6">
-                {activeTab === 'active'
+                {activeTab === "active"
                   ? "You don't have any active wellness packages matching your criteria."
                   : "You don't have any expired packages matching your criteria."}
               </p>
-              {activeTab === 'active' && (
+              {activeTab === "active" && (
                 <button
                   onClick={handleFindMorePackages}
                   className="inline-flex items-center space-x-2 bg-blue-500 text-white px-6 py-3 rounded-lg font-semibold hover:bg-blue-600 transition-colors"
                 >
-                  <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
-                    <path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z"/>
+                  <svg
+                    className="w-5 h-5"
+                    fill="currentColor"
+                    viewBox="0 0 24 24"
+                  >
+                    <path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z" />
                   </svg>
                   <span>Browse Available Packages</span>
                 </button>
@@ -376,15 +625,25 @@ export default function WellnessPage() {
               {sortedPackages.map((pkg) => (
                 <div key={pkg.id} className="relative group">
                   <WellnessPackageCard package={pkg} />
-                  {activeTab === 'active' && (
+                  {activeTab === "active" && (
                     <div className="absolute top-4 right-4 opacity-0 group-hover:opacity-100 transition-opacity">
                       <button
                         onClick={() => handleUnenroll(pkg.id)}
                         className="bg-white/90 backdrop-blur-sm p-2 rounded-lg shadow-md hover:bg-white transition-colors"
                         title="Unenroll from package"
                       >
-                        <svg className="w-5 h-5 text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                        <svg
+                          className="w-5 h-5 text-red-500"
+                          fill="none"
+                          stroke="currentColor"
+                          viewBox="0 0 24 24"
+                        >
+                          <path
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            strokeWidth={2}
+                            d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
+                          />
                         </svg>
                       </button>
                     </div>
@@ -396,57 +655,120 @@ export default function WellnessPage() {
         </div>
 
         {/* Available Packages Section */}
-        {activeTab === 'active' && (
+        {activeTab === "active" && (
           <div className="mt-12">
             <div className="flex justify-between items-center mb-6">
               <div>
-                <h2 className="text-2xl font-bold text-gray-800">Available Packages</h2>
-                <p className="text-gray-600 mt-1">Discover new wellness experiences</p>
+                <h2 className="text-2xl font-bold text-gray-800">
+                  Available Packages
+                </h2>
+                <p className="text-gray-600 mt-1">
+                  Discover new wellness experiences
+                </p>
               </div>
               <button
                 onClick={handleFindMorePackages}
                 className="text-blue-600 font-semibold hover:text-blue-700 flex items-center space-x-2"
               >
                 <span>View All Packages</span>
-                <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
-                  <path d="M8.59 16.59L13.17 12 8.59 7.41 10 6l6 6-6 6-1.41-1.41z"/>
+                <svg
+                  className="w-5 h-5"
+                  fill="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path d="M8.59 16.59L13.17 12 8.59 7.41 10 6l6 6-6 6-1.41-1.41z" />
                 </svg>
               </button>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-              {availablePackages.map((pkg, index) => (
-                <div key={index} className="bg-white rounded-xl shadow-sm border p-6 hover:shadow-md transition-shadow">
-                  <div className="flex items-start justify-between mb-4">
-                    <div>
-                      <span className="text-xs font-medium text-gray-500 bg-gray-100 px-2 py-1 rounded">
-                        {pkg.type}
-                      </span>
-                    </div>
-                    <div className="text-2xl font-bold text-blue-600">Rs. {pkg.price.toLocaleString('en-LK')}</div>
-                  </div>
-                  <h3 className="font-bold text-gray-800 mb-2">{pkg.name}</h3>
-                  <p className="text-gray-600 text-sm mb-4">{pkg.description}</p>
-                  <div className="flex items-center justify-between mb-4">
-                    <div className="text-sm text-gray-500">
-                      <span className="flex items-center">
-                        <svg className="w-4 h-4 text-yellow-400 mr-1" fill="currentColor" viewBox="0 0 24 24">
-                          <path d="M12 17.27L18.18 21l-1.64-7.03L22 9.24l-7.19-.61L12 2 9.19 8.63 2 9.24l5.46 4.73L5.82 21z"/>
-                        </svg>
-                        {pkg.rating} ({pkg.reviews} reviews)
-                      </span>
-                    </div>
-                    <div className="text-sm text-gray-500">{pkg.duration}</div>
-                  </div>
-                  <button 
-                    onClick={() => handleAddPackage(pkg.name)}
-                    className="w-full py-2 bg-blue-500 text-white rounded-lg font-medium hover:bg-blue-600 transition-colors"
+            {loading.available ? (
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+                {[1, 2, 3, 4].map((i) => (
+                  <PackageSkeleton key={i} />
+                ))}
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+                {availablePackages.slice(0, 4).map((pkg, index) => (
+                  <div
+                    key={index}
+                    className="bg-white rounded-xl shadow-sm border p-6 hover:shadow-md transition-shadow"
                   >
-                    Add Package
-                  </button>
-                </div>
-              ))}
-            </div>
+                    <div className="flex items-start justify-between mb-4">
+                      <div>
+                        <span className="text-xs font-medium text-gray-500 bg-gray-100 px-2 py-1 rounded">
+                          {pkg.type}
+                        </span>
+                      </div>
+                      <div className="text-2xl font-bold text-blue-600">
+                        Rs. {pkg.price.toLocaleString("en-LK")}
+                      </div>
+                    </div>
+                    <h3 className="font-bold text-gray-800 mb-2">{pkg.name}</h3>
+                    <p className="text-gray-600 text-sm mb-4">
+                      {pkg.description}
+                    </p>
+
+                    {/* Package details */}
+                    <div className="space-y-2 mb-4">
+                      <div className="flex items-center text-sm text-gray-500">
+                        <svg
+                          className="w-4 h-4 mr-2"
+                          fill="currentColor"
+                          viewBox="0 0 24 24"
+                        >
+                          <path d="M9 11H7v2h2v-2zm4 0h-2v2h2v-2zm4 0h-2v2h2v-2zm2-7h-1V2h-2v2H8V2H6v2H5c-1.11 0-1.99.9-1.99 2L3 20a2 2 0 002 2h14c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2zm0 16H5V9h14v11z" />
+                        </svg>
+                        <span>{pkg.duration}</span>
+                      </div>
+                      <div className="flex items-center text-sm text-gray-500">
+                        <svg
+                          className="w-4 h-4 mr-2"
+                          fill="currentColor"
+                          viewBox="0 0 24 24"
+                        >
+                          <path d="M8 5v14l11-7z" />
+                        </svg>
+                        <span>{pkg.sessions} sessions</span>
+                      </div>
+                      {pkg.therapist && (
+                        <div className="flex items-center text-sm text-gray-500">
+                          <svg
+                            className="w-4 h-4 mr-2"
+                            fill="currentColor"
+                            viewBox="0 0 24 24"
+                          >
+                            <path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z" />
+                          </svg>
+                          <span>{pkg.therapist}</span>
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="flex items-center justify-between mb-4">
+                      <div className="text-sm text-gray-500">
+                        <span className="flex items-center">
+                          <svg
+                            className="w-4 h-4 text-yellow-400 mr-1"
+                            fill="currentColor"
+                            viewBox="0 0 24 24"
+                          >
+                            <path d="M12 17.27L18.18 21l-1.64-7.03L22 9.24l-7.19-.61L12 2 9.19 8.63 2 9.24l5.46 4.73L5.82 21z" />
+                          </svg>
+                          {pkg.rating.toFixed(1)} ({pkg.reviews} reviews)
+                        </span>
+                      </div>
+                    </div>
+                    <button
+                      onClick={() => handleAddPackage(pkg.name)}
+                      className="w-full py-2 bg-blue-500 text-white rounded-lg font-medium hover:bg-blue-600 transition-colors"
+                    >
+                      Add Package
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         )}
       </div>
@@ -455,9 +777,12 @@ export default function WellnessPage() {
       {showUnenrollModal && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-2xl p-6 max-w-md w-full">
-            <h3 className="text-xl font-bold text-gray-800 mb-2">Confirm Unenrollment</h3>
+            <h3 className="text-xl font-bold text-gray-800 mb-2">
+              Confirm Unenrollment
+            </h3>
             <p className="text-gray-600 mb-6">
-              Are you sure you want to unenroll from this package? Any remaining sessions will be forfeited and cannot be refunded.
+              Are you sure you want to unenroll from this package? Any remaining
+              sessions will be forfeited and cannot be refunded.
             </p>
             <div className="flex space-x-4">
               <button

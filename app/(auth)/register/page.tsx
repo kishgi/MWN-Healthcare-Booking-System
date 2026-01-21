@@ -73,7 +73,7 @@ export default function RegisterPage() {
 
   // ---------------- Input Handlers ----------------
   const handleChange = (
-    e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>
+    e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>,
   ) => {
     const target = e.target;
     const name = target.name;
@@ -170,7 +170,7 @@ export default function RegisterPage() {
       // --- Check email uniqueness ---
       const emailQuery = query(
         collection(db, "users"),
-        where("email", "==", formData.email)
+        where("email", "==", formData.email),
       );
       const emailSnap = await getDocs(emailQuery);
       if (!emailSnap.empty) {
@@ -185,7 +185,7 @@ export default function RegisterPage() {
       // --- Check mobile uniqueness ---
       const mobileQuery = query(
         collection(db, "users"),
-        where("mobile", "==", formData.mobile)
+        where("mobile", "==", formData.mobile),
       );
       const mobileSnap = await getDocs(mobileQuery);
       if (!mobileSnap.empty) {
@@ -203,7 +203,7 @@ export default function RegisterPage() {
         formData.email,
         formData.password,
         formData.mobile,
-        formData.role
+        formData.role,
       );
 
       alert("Registration successful!");
@@ -264,7 +264,7 @@ export default function RegisterPage() {
             disabled={isSubmitting}
             className="w-full py-3 mb-4 border rounded-xl bg-white hover:bg-gray-100 flex justify-center items-center space-x-2 transition"
           >
-            <img src="/google-logo.png" className="h-5 w-5" alt="Google Logo" />
+            {/* <img src="/google-logo.png" className="h-5 w-5" alt="Google Logo" /> */}
             <span>Sign up with Google (Optional)</span>
           </button>
 

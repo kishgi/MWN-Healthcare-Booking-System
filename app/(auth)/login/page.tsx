@@ -38,7 +38,7 @@ export default function LoginPage() {
 
   // ---------------- Handlers ----------------
   const handleChange = (
-    e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>
+    e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>,
   ) => {
     const target = e.target;
     const name = target.name;
@@ -141,7 +141,7 @@ export default function LoginPage() {
             disabled={isSubmitting}
             className="w-full py-3 mb-4 border rounded-xl bg-white hover:bg-gray-100 flex justify-center items-center space-x-2 transition"
           >
-            <img src="/google-logo.png" className="h-5 w-5" alt="Google Logo" />
+            {/* <img src="/google-logo.png" className="h-5 w-5" alt="Google Logo" /> */}
             <span>Login with Google</span>
           </button>
 
